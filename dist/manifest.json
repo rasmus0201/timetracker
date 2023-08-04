@@ -1,0 +1,19 @@
+{
+    "name": "TimeTracker",
+    "short_name": "TimeTracker",
+    "theme_color": "#000000",
+    "icons": [
+        {
+            "src": "./logo.svg",
+            "type": "image/svg"
+        },
+        {
+            "src": "./logo-48x48.png",
+            "sizes": "48x48",
+            "type": "image/png"
+        }
+    ],
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff"
+}

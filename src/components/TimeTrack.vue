@@ -42,7 +42,7 @@ const calculateDuration = (
   a: Date,
   b: Date,
   period: TimePeriod,
-  round: false|number = false
+  round: false | number = false
 ): number => {
   const duration = (a.getTime() - b.getTime()) / period;
 
@@ -58,11 +58,17 @@ const hasPaused = computed(
     times.value.some((t) => t.type === TimeType.PauseStart) &&
     times.value.some((t) => t.type === TimeType.PauseEnd)
 );
-const endTime = computed(() =>
+const startDate = computed(() =>
+  times.value.find((t) => t.type === TimeType.Start)
+);
+const endDate = computed(() =>
   [...times.value].reverse().find((t) => t.type === TimeType.End)
 );
 
-const totalPauseTimeHours = computed(() => {
+const totalPauseTimeSeconds = computed(() => {
+  // Dependency to trigger changes if activeEditTime is updated.
+  activeEditTime.value;
+
   let totalMs = 0;
 
   let currentPauseStart: Date | null = null;
@@ -72,12 +78,70 @@ const totalPauseTimeHours = computed(() => {
     }
 
     if (currentPauseStart && time.type === TimeType.PauseEnd) {
-      totalMs += calculateDuration(time.date, currentPauseStart, TimePeriod.Millisecond, false);
+      totalMs += calculateDuration(
+        time.date,
+        currentPauseStart,
+        TimePeriod.Millisecond,
+        false
+      );
       currentPauseStart = null;
     }
   }
 
-  return (totalMs / TimePeriod.Hour).toFixed(2);
+  return totalMs / TimePeriod.Second;
+});
+
+const totalPauseTimeHours = computed(() => {
+  return totalPauseTimeSeconds.value / (TimePeriod.Hour / TimePeriod.Second);
+});
+
+type WeekDay = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+const dayToWorkTimeSeconds: { [key in WeekDay]: number } = {
+  0: 0,
+  1: 27_000, // 7.5hrs
+  2: 27_000, // 7.5hrs
+  3: 27_000, // 7.5hrs
+  4: 27_000, // 7.5hrs
+  5: 25_200, // 7 hours
+  6: 0,
+};
+
+const requiredPauseLengthSeconds = 1_800; // (30min)
+
+const workTime = computed(() => {
+  const day = new Date(props.date).getDay() as WeekDay;
+
+  return dayToWorkTimeSeconds[day];
+});
+
+const projectedEndDate = computed(() => {
+  if (!startDate.value) {
+    return null;
+  }
+
+  const date = new Date(startDate.value.date);
+  date.setSeconds(
+    date.getSeconds() + workTime.value + totalPauseTimeSeconds.value
+  );
+
+  return date;
+});
+
+const requiredEndDate = computed(() => {
+  if (
+    !startDate.value ||
+    totalPauseTimeSeconds.value >= requiredPauseLengthSeconds
+  ) {
+    return null;
+  }
+
+  const date = new Date(startDate.value.date);
+  date.setSeconds(
+    date.getSeconds() + workTime.value + requiredPauseLengthSeconds
+  );
+
+  return date;
 });
 
 const onReset = () => {
@@ -133,6 +197,31 @@ const onStop = () => {
 
   emit("update", times.value);
 };
+
+const activeEditTime = ref<number | null>(null);
+const onEditTime = (index: number) => {
+  activeEditTime.value = index;
+};
+
+type EventWithValue = FocusEvent & { target: { value: string } };
+
+const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
+  const timeParts = event.target.value.split(':');
+
+  if (timeParts.length < 2) {
+    return;
+  }
+
+  times.value[timeIndex].date.setHours(parseInt(timeParts[0]));
+  times.value[timeIndex].date.setMinutes(parseInt(timeParts[1]));
+
+  if (timeParts.length === 3) {
+    times.value[timeIndex].date.setSeconds(parseInt(timeParts[2]));
+  }
+
+  activeEditTime.value = null;
+  emit("update", times.value);
+}
 </script>
 
 <template>
@@ -179,29 +268,50 @@ const onStop = () => {
       </div>
     </div>
 
-    <div class="row" v-if="times.length">
-      <div class="col-12">
+    <div class="row" v-if="startDate">
+      <div class="col-12 d-flex flex-column gap-2">
         <div class="d-flex gap-2">
           <span class="badge bg-primary">
             Start:
             {{
-              times[0].date.toLocaleTimeString(language, {
+              startDate.date.toLocaleTimeString(language, {
                 hour: "2-digit",
                 minute: "2-digit",
               })
             }}
           </span>
-          <span v-if="endTime" class="badge bg-primary">
+          <span v-if="endDate" class="badge bg-primary">
             End:
             {{
-              endTime.date.toLocaleTimeString(language, {
+              endDate.date.toLocaleTimeString(language, {
                 hour: "2-digit",
                 minute: "2-digit",
               })
             }}
           </span>
           <span v-if="hasPaused" class="badge bg-primary">
-            Pause time: {{ totalPauseTimeHours.toLocaleString() }}hr
+            Pause time: {{ totalPauseTimeHours.toFixed(2).toLocaleString() }}hr
+          </span>
+        </div>
+
+        <div class="d-flex gap-2">
+          <span v-if="projectedEndDate" class="badge bg-primary">
+            Projected end time:
+            {{
+              projectedEndDate.toLocaleTimeString(language, {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            }}
+          </span>
+          <span v-if="requiredEndDate" class="badge bg-warning">
+            Required end time:
+            {{
+              requiredEndDate.toLocaleTimeString(language, {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            }}
           </span>
         </div>
       </div>
@@ -219,14 +329,32 @@ const onStop = () => {
             <tbody class="table-group-divider">
               <tr v-for="(time, index) in times" :key="index">
                 <td>{{ timeTypeLabels[time.type] }}</td>
-                <td>{{ time.date.toLocaleTimeString() }}</td>
+                <td @dblclick="onEditTime(index)">
+                  <div v-if="activeEditTime === index" class="d-flex gap-2">
+                    <input
+                      type="time"
+                      class="form-control"
+                      :value="
+                        time.date.toLocaleTimeString('en-GB', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })
+                      "
+                      @blur="onSaveEditTime($event as EventWithValue, index)"
+                    />
+                  </div>
+                  <span v-else>{{ time.date.toLocaleTimeString() }}</span>
+                </td>
                 <td>
                   <template v-if="times[index + 1]">
                     {{ times[index + 1].date.toLocaleTimeString() }}
                   </template>
                 </td>
                 <td>
-                  <template v-if="time.type === TimeType.PauseStart && times[index + 1]">
+                  <template
+                    v-if="time.type === TimeType.PauseStart && times[index + 1]"
+                  >
                     {{
                       calculateDuration(
                         times[index + 1].date,

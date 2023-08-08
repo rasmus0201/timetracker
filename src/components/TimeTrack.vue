@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { Time, TimeType, TimeState, TimePeriod } from "../types";
+import dayjs from "dayjs";
 
 const props = defineProps<{
   date: string;
@@ -110,7 +111,7 @@ const dayToWorkTimeSeconds: { [key in WeekDay]: number } = {
 const requiredPauseLengthSeconds = 1_800; // (30min)
 
 const workTime = computed(() => {
-  const day = new Date(props.date).getDay() as WeekDay;
+  const day = dayjs(props.date).day() as WeekDay;
 
   return dayToWorkTimeSeconds[day];
 });
@@ -120,12 +121,7 @@ const projectedEndDate = computed(() => {
     return null;
   }
 
-  const date = new Date(startDate.value.date);
-  date.setSeconds(
-    date.getSeconds() + workTime.value + totalPauseTimeSeconds.value
-  );
-
-  return date;
+  return dayjs(startDate.value.date).second(workTime.value + totalPauseTimeSeconds.value);
 });
 
 const requiredEndDate = computed(() => {
@@ -136,12 +132,7 @@ const requiredEndDate = computed(() => {
     return null;
   }
 
-  const date = new Date(startDate.value.date);
-  date.setSeconds(
-    date.getSeconds() + workTime.value + requiredPauseLengthSeconds
-  );
-
-  return date;
+  return dayjs(startDate.value.date).add(workTime.value + requiredPauseLengthSeconds, "second");
 });
 
 const onReset = () => {
@@ -206,7 +197,7 @@ const onEditTime = (index: number) => {
 type EventWithValue = FocusEvent & { target: { value: string } };
 
 const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
-  const timeParts = event.target.value.split(':');
+  const timeParts = event.target.value.split(":");
 
   if (timeParts.length < 2) {
     return;
@@ -221,7 +212,7 @@ const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
 
   activeEditTime.value = null;
   emit("update", times.value);
-}
+};
 </script>
 
 <template>
@@ -290,28 +281,16 @@ const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
             }}
           </span>
           <span v-if="hasPaused" class="badge bg-primary">
-            Pause time: {{ totalPauseTimeHours.toFixed(2).toLocaleString() }}hr
+            Pause time: {{ totalPauseTimeHours.toFixed(2).toLocaleString() }}hrs
           </span>
         </div>
 
         <div class="d-flex gap-2">
           <span v-if="projectedEndDate" class="badge bg-primary">
-            Projected end time:
-            {{
-              projectedEndDate.toLocaleTimeString(language, {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            }}
+            Projected end time: {{ projectedEndDate.format("HH:mm") }}
           </span>
           <span v-if="requiredEndDate" class="badge bg-warning">
-            Required end time:
-            {{
-              requiredEndDate.toLocaleTimeString(language, {
-                hour: "2-digit",
-                minute: "2-digit",
-              })
-            }}
+            Required end time: {{ requiredEndDate.format("HH:mm") }}
           </span>
         </div>
       </div>
@@ -338,7 +317,7 @@ const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
                         time.date.toLocaleTimeString('en-GB', {
                           hour: '2-digit',
                           minute: '2-digit',
-                          second: '2-digit'
+                          second: '2-digit',
                         })
                       "
                       @blur="onSaveEditTime($event as EventWithValue, index)"

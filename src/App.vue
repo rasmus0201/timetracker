@@ -2,10 +2,14 @@
 import { ref } from "vue";
 import TimeTrack from "./components/TimeTrack.vue";
 import { Time } from "./types";
+import { computed } from "vue";
+import dayjs from "dayjs";
 
-const selectedDate = ref(new Date().toLocaleDateString());
+const selectedDate = ref(new Date());
+const selectedDateKey = computed(() => dayjs(selectedDate.value).format('YYYY-MM-DD'));
+const selectedDateFormatted = computed(() => selectedDate.value.toLocaleDateString());
 
-const storedTimes = localStorage.getItem(selectedDate.value);
+const storedTimes = localStorage.getItem(selectedDateKey.value);
 const deserializer = (str: string): Time[] => {
   const jsonParsedTimes = JSON.parse(str);
 
@@ -23,15 +27,15 @@ const deserializer = (str: string): Time[] => {
 const times = ref<Time[]>(storedTimes ? deserializer(storedTimes) : []);
 
 const onUpdate = (updatedTimes: Time[]) => {
-  localStorage.setItem(selectedDate.value, JSON.stringify(updatedTimes));
+  localStorage.setItem(selectedDateKey.value, JSON.stringify(updatedTimes));
 }
 </script>
 
 <template>
   <div class="container my-4">
     <h1>TimeTracker</h1>
-    <p class="lead">Dato: {{ selectedDate }}</p>
-    <TimeTrack :key="selectedDate" :date="selectedDate" :times="times" @update="onUpdate($event)" />
+    <p class="lead">Dato: {{ selectedDateFormatted }}</p>
+    <TimeTrack :key="selectedDateFormatted" :date="selectedDateKey" :times="times" @update="onUpdate($event)" />
   </div>
 </template>
 

@@ -29,12 +29,26 @@ const times = ref<Time[]>(storedTimes ? deserializer(storedTimes) : []);
 const onUpdate = (updatedTimes: Time[]) => {
   localStorage.setItem(selectedDateKey.value, JSON.stringify(updatedTimes));
 }
+
+const onRefresh = () => {
+  const oldKey = selectedDateKey.value;
+  selectedDate.value = new Date();
+  const newKey = selectedDateKey.value;
+
+  if (oldKey !== newKey) {
+    const storedTimes = localStorage.getItem(newKey);
+    times.value = storedTimes ? deserializer(storedTimes) : [];
+  }
+}
 </script>
 
 <template>
   <div class="container my-4">
     <h1>TimeTracker</h1>
-    <p class="lead">Dato: {{ selectedDateFormatted }}</p>
+    <p class="lead d-flex gap-2 align-items-center">
+      <span>Dato: {{ selectedDateFormatted }}</span>
+      <button type="button" class="btn btn-sm btn-primary" @click="onRefresh()">Refresh</button>
+    </p>
     <TimeTrack :key="selectedDateFormatted" :date="selectedDateKey" :times="times" @update="onUpdate($event)" />
   </div>
 </template>

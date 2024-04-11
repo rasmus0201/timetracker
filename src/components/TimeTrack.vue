@@ -27,6 +27,7 @@ const timeStateMap: { [key in TimeType]: any } = {
 };
 
 const language = navigator.language;
+const LUNCH_BREAK_DURATION_SECONDS = 30 * 60; // 30 minutes
 
 const times = ref<Time[]>(props.times);
 
@@ -82,14 +83,31 @@ const totalPauseTimeSeconds = computed(() => {
       totalMs += calculateDuration(
         time.date,
         currentPauseStart,
-        TimePeriod.Millisecond,
-        false
+        TimePeriod.Millisecond
       );
       currentPauseStart = null;
     }
   }
 
   return totalMs / TimePeriod.Second;
+});
+
+const totalWorkTime = computed(() => {
+  if (!startDate.value || !endDate.value) {
+    return 0;
+  }
+
+  const totalTime = calculateDuration(endDate.value.date, startDate.value.date, TimePeriod.Millisecond) / TimePeriod.Second;
+
+  return totalTime - totalPauseTimeSeconds.value;
+});
+
+const totalWorkTimeHours = computed(() => {
+  return totalWorkTime.value / (TimePeriod.Hour / TimePeriod.Second);
+});
+
+const totalWorkTimeWithoutLunchBreakHours = computed(() => {
+  return (totalWorkTime.value - LUNCH_BREAK_DURATION_SECONDS) / (TimePeriod.Hour / TimePeriod.Second);
 });
 
 const totalPauseTimeHours = computed(() => {
@@ -108,8 +126,6 @@ const dayToWorkTimeSeconds: { [key in WeekDay]: number } = {
   6: 0,
 };
 
-const requiredPauseLengthSeconds = 1_800; // (30min)
-
 const workTime = computed(() => {
   const day = dayjs(props.date).day() as WeekDay;
 
@@ -124,17 +140,6 @@ const projectedEndDate = computed(() => {
   return dayjs(startDate.value.date).second(workTime.value + totalPauseTimeSeconds.value);
 });
 
-const requiredEndDate = computed(() => {
-  if (
-    !startDate.value ||
-    totalPauseTimeSeconds.value >= requiredPauseLengthSeconds
-  ) {
-    return null;
-  }
-
-  return dayjs(startDate.value.date).add(workTime.value + requiredPauseLengthSeconds, "second");
-});
-
 const onReset = () => {
   if (!window.confirm("Sure?")) {
     return;
@@ -146,18 +151,16 @@ const onReset = () => {
 };
 
 const onStart = () => {
-  if (times.value.length) {
-    if (!window.confirm("Sure? This will delete current times for the day!")) {
-      return;
-    }
-  }
+  // if (times.value.length) {
+  //   if (!window.confirm("Sure? This will delete current times for the day!")) {
+  //     return;
+  //   }
+  // }
 
-  times.value = [
-    {
-      type: TimeType.Start,
-      date: new Date(),
-    },
-  ];
+  times.value.push({
+    type: TimeType.Start,
+    date: new Date(),
+  });
 
   emit("update", times.value);
 };
@@ -217,9 +220,9 @@ const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
 
 <template>
   <div>
-    <div class="row mb-3">
+    <div class="row mb-4">
       <div class="col-12">
-        <div class="d-flex gap-3">
+        <div class="d-flex gap-2 flex-wrap">
           <button
             v-if="times.length"
             class="btn btn-lg btn-warning"
@@ -228,7 +231,7 @@ const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
             Reset
           </button>
           <button
-            v-if="state === TimeState.Stopped"
+            v-if="[TimeState.Started, TimeState.Stopped].includes(state)"
             class="btn btn-lg btn-primary"
             @click="onStart()"
           >
@@ -261,7 +264,7 @@ const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
 
     <div class="row" v-if="startDate">
       <div class="col-12 d-flex flex-column gap-2">
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-wrap">
           <span class="badge bg-primary">
             Start:
             {{
@@ -285,12 +288,15 @@ const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
           </span>
         </div>
 
-        <div class="d-flex gap-2">
-          <span v-if="projectedEndDate" class="badge bg-primary">
+        <div class="d-flex gap-2 flex-wrap">
+          <span v-if="projectedEndDate" class="badge bg-success">
             Projected end time: {{ projectedEndDate.format("HH:mm") }}
           </span>
-          <span v-if="requiredEndDate" class="badge bg-warning">
-            Required end time: {{ requiredEndDate.format("HH:mm") }}
+          <span v-if="totalWorkTimeHours > 0" class="badge bg-success">
+            Total duration: {{ totalWorkTimeHours.toFixed(2).toLocaleString() }}hrs
+          </span>
+          <span v-if="totalWorkTimeWithoutLunchBreakHours > 0" class="badge bg-success">
+            Assignments duration (w/o lunch break): {{ totalWorkTimeWithoutLunchBreakHours.toFixed(2).toLocaleString() }}hrs
           </span>
         </div>
       </div>
@@ -331,9 +337,7 @@ const onSaveEditTime = (event: EventWithValue, timeIndex: number) => {
                   </template>
                 </td>
                 <td>
-                  <template
-                    v-if="time.type === TimeType.PauseStart && times[index + 1]"
-                  >
+                  <template v-if="times[index + 1]">
                     {{
                       calculateDuration(
                         times[index + 1].date,
